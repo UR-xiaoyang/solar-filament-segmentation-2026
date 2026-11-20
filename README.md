@@ -78,11 +78,21 @@ unzip solar-filament-segmentation-challenge-2026.zip -d data/raw/
 
 ### Download Model Weights
 
+Five-fold trained weights are available on [GitHub Releases](https://github.com/UR-xiaoyang/solar-filament-segmentation-2026/releases/tag/v1.0.0) (255 MB total).
+
 ```bash
-# Five-fold trained weights (265 MB total)
-# TODO: Add Hugging Face Hub or GitHub Release link
-# Example:
-# wget https://huggingface.co/UR-xiaoyang/solar-filament-efficientnetb3/resolve/main/fold0_best.pth -O checkpoints/fold0_best.pth
+# Download all 5 folds (recommended for ensemble inference)
+mkdir -p checkpoints
+cd checkpoints
+wget https://github.com/UR-xiaoyang/solar-filament-segmentation-2026/releases/download/v1.0.0/fold0_best.pth
+wget https://github.com/UR-xiaoyang/solar-filament-segmentation-2026/releases/download/v1.0.0/fold1_best.pth
+wget https://github.com/UR-xiaoyang/solar-filament-segmentation-2026/releases/download/v1.0.0/fold2_best.pth
+wget https://github.com/UR-xiaoyang/solar-filament-segmentation-2026/releases/download/v1.0.0/fold3_best.pth
+wget https://github.com/UR-xiaoyang/solar-filament-segmentation-2026/releases/download/v1.0.0/fold4_best.pth
+cd ..
+
+# Or download a single fold for testing
+wget https://github.com/UR-xiaoyang/solar-filament-segmentation-2026/releases/download/v1.0.0/fold0_best.pth -O checkpoints/fold0_best.pth
 ```
 
 ---
