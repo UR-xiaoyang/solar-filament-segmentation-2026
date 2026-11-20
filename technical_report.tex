@@ -1,0 +1,288 @@
+\documentclass[conference]{IEEEtran}
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{url}
+\usepackage{hyperref}
+
+\begin{document}
+
+\title{Solar Filament Instance Segmentation via Quality-Gated Semantic Segmentation and Multi-Scale Ensemble}
+
+\author{
+\IEEEauthorblockN{Team SRC\_xiao\_yang}
+\IEEEauthorblockA{\textit{Solar Filament Segmentation Challenge 2026}\\
+Final Public Score: 0.38 PQ (Rank 468/1566)\\
+Code: \url{https://github.com/UR-xiaoyang/solar-filament-segmentation-2026}}
+}
+
+\maketitle
+
+\begin{abstract}
+We present a semantic segmentation approach with component-level quality gating for solar filament instance segmentation in the Solar Filament Segmentation Challenge 2026. Our method achieves an out-of-fold Panoptic Quality (PQ) of 0.4204 and a public leaderboard score of 0.38, placing us in the top 30\% without using leaked test annotations. The key contributions include: (1) a three-channel input representation combining radial contrast, disk-normalized intensity, and normalized radius; (2) a quality-gated post-processing pipeline that filters low-confidence instances; (3) systematic ablation studies identifying effective vs. ineffective techniques under the strict PQ metric. We demonstrate that semantic segmentation with instance-level filtering can achieve competitive performance, though resolution remains the primary bottleneck.
+\end{abstract}
+
+\section{Introduction}
+
+Solar filaments are elongated structures in the Sun's chromosphere that appear as dark features in H-alpha observations. Accurate instance segmentation of filaments is crucial for space weather prediction and solar physics research. The Solar Filament Segmentation Challenge 2026, hosted on Kaggle, provided 618 training images (2048×2048 grayscale JPEGs) and 180 test images, evaluated using Panoptic Quality (PQ)~\cite{kirillov2019panoptic}.
+
+\subsection{Challenge Context and Data Leakage}
+
+A critical aspect of this competition was the presence of data leakage. The official test set contained 180 images, of which 139 (77.2\%) were byte-identical to publicly available MAGFiLO 1.0 annotations~\cite{magfilo}. Community analysis suggested that scores above $\sim$0.41--0.45 likely relied on leaked annotations~\cite{discussion741892}. The organizers explicitly stated that PQ $>$ 0.35 is ``of great value'' and would manually review top submissions for methodology and reproducibility~\cite{discussion724503}.
+
+Our approach achieved 0.38 without using any leaked test annotations, placing us within the organizers' stated threshold for ``significant merit'' and above the human inter-annotator agreement baseline (PQ 0.334)~\cite{argoha2026}.
+
+\subsection{Evaluation Metric Change}
+
+On August 7, 2026, the organizers switched from Dice coefficient to Panoptic Quality (PQ), requiring instance-level predictions with strict non-overlapping constraints. This invalidated all prior Dice-based optimization and required reestablishing the proxy metric pipeline. Our key lesson: \textbf{proxy metrics must be from the same metric family as the official scorer}, as semantic Dice can produce inverse rankings compared to instance PQ.
+
+\section{Method}
+
+\subsection{Architecture}
+
+We employed a U-Net architecture with EfficientNet-B3~\cite{tan2019efficientnet} encoder and scSE (spatial and channel squeeze-and-excitation) decoder heads~\cite{roy2018concurrent}, implemented via \texttt{segmentation-models-pytorch}~\cite{iakubovskii2019segmentation}. The model predicts per-pixel probabilities for the ``filament'' class.
+
+\subsection{Input Preprocessing}
+
+Instead of raw pixel intensities, we constructed a three-channel input:
+\begin{enumerate}
+    \item \textbf{Radial Contrast}: Pixel intensity minus the azimuthal median at the same radius, enhancing elongated structures against the background radial gradient.
+    \item \textbf{Disk-Normalized Intensity}: Raw intensity normalized by the median intensity at each radius.
+    \item \textbf{Normalized Radius}: Distance from solar disk center divided by disk radius.
+\end{enumerate}
+
+This representation explicitly encodes solar geometry and suppresses the strong center-to-limb variation inherent in solar images.
+
+\subsection{Training Protocol}
+
+\textbf{Data Augmentation}: We extracted random 512×512 tiles containing at least one filament pixel, with probability 0.3 of selecting a uniform-random tile. Augmentations included horizontal/vertical flips, 90° rotations, brightness/contrast jittering, and additive Gaussian noise.
+
+\textbf{Loss Function}: A weighted combination of Binary Cross-Entropy (BCE) and Tversky loss~\cite{salehi2017tversky} with $\alpha = \beta = 0.5$ (balanced precision/recall):
+\begin{equation}
+\mathcal{L} = \text{BCE} + \text{Tversky}(0.5, 0.5)
+\end{equation}
+
+\textbf{Optimization}: AdamW optimizer with OneCycleLR scheduler~\cite{smith2019super}, peak learning rate 0.001, pct\_start=0.05, trained for 50 epochs with batch size 8 per fold.
+
+\textbf{Cross-Validation}: Stratified 5-fold split by image, ensuring uniform filament coverage per fold.
+
+\subsection{Inference Pipeline}
+
+\textbf{Multi-Scale Test-Time Augmentation (TTA)}: We applied:
+\begin{itemize}
+    \item 8-way D4 dihedral group augmentation (rotations + reflections)
+    \item 3 scales: 0.9×, 1.0×, 1.1×
+    \item Total: $8 \times 3 = 24$ forward passes per image per fold
+\end{itemize}
+
+\textbf{Five-Fold Ensemble}: Averaged probability maps across all 5 folds before thresholding, yielding 120 forward passes per test image.
+
+\subsection{Post-Processing and Instance Extraction}
+
+\textbf{Thresholding}: Fixed probability threshold of 0.5.
+
+\textbf{Connected Components}: 8-connectivity labeling to extract candidate instances.
+
+\textbf{Minimum Area Filtering}: Removed components smaller than 256 pixels (effective at reducing false positives).
+
+\textbf{Quality Gating (Q70)}: For each component, computed a quality score based on mean probability within the component. Retained only components with quality $\geq$ 70th percentile across all candidates. This was the single most impactful post-processing step, improving public score from 0.37 to 0.38.
+
+\textbf{Overlap Resolution}: Since PQ requires non-overlapping instances, we resolved conflicts by assigning overlapping pixels to the higher-quality component and removing the lower-quality one entirely if reduced below the minimum area.
+
+\section{Experiments and Ablation Studies}
+
+\subsection{What Worked}
+
+Table~\ref{tab:effective} summarizes experimentally validated improvements.
+
+\begin{table}[h]
+\centering
+\caption{Effective Techniques}
+\label{tab:effective}
+\small
+\begin{tabular}{@{}lcc@{}}
+\toprule
+\textbf{Modification} & \textbf{Evidence} & \textbf{Outcome} \\
+\midrule
+768 input vs 512 & Two-fold $+0.010$ Dice & Adopted \\
+Min area 64→256 & FP $-24.6\%$ & Adopted \\
+Quality gate Q70 & 0.38 vs 0.37 (public) & Adopted \\
+5-fold ensemble & Error suppression & Adopted \\
+D4 TTA & 0.36→0.37 & Adopted \\
+Multi-scale TTA & 0.37→0.38 & Adopted \\
+50 vs 30 epochs & OOF PQ 0.381→0.420 & Adopted \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{What Did Not Work}
+
+Table~\ref{tab:ineffective} lists techniques that failed to improve validation or public scores.
+
+\begin{table}[h]
+\centering
+\caption{Ineffective or Harmful Techniques}
+\label{tab:ineffective}
+\small
+\begin{tabular}{@{}lcc@{}}
+\toprule
+\textbf{Hypothesis} & \textbf{Result} & \textbf{Decision} \\
+\midrule
+p25--p99 normalization & $\Delta$Dice $-0.0008$ & Rejected \\
+768→1024 resolution & $+0.00035$ (noise) & Rejected \\
+Tversky $\alpha$0.3/$\beta$0.7 & $-0.014$ & Rejected \\
+EfficientNet-B4 & $+0.0032$ (noise) & Rejected \\
+Multi-resolution fusion & $-0.0446$ & Rejected \\
+Local contrast residual & $+0.0010$ (noise) & NO-GO \\
+Spine geometry loss & Fold0: 0.637 vs 0.681 & NO-GO \\
+Mask R-CNN & Fold0 PQ: 0.047 vs 0.107 & NO-GO \\
+Gradient Boosting filter & OOF better, public worse & NO-GO \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Key Findings}
+
+\begin{enumerate}
+    \item \textbf{Semantic segmentation is viable for instance tasks} when combined with quality-based filtering, though native instance architectures (Mask R-CNN) failed to match semantic performance on this dataset.
+    \item \textbf{Resolution is the primary bottleneck}. Independent work~\cite{argoha2026} demonstrated that increasing from 1280² to 2048² resolution yields $+0.057$ PQ, the largest single improvement factor. Our 768px training was a confirmed waste.
+    \item \textbf{Test-time augmentation has diminishing returns}. TTA provided $\sim+0.02$ PQ but required 120× compute.
+    \item \textbf{Overlapping predictions cause silent submission failures}. 20 of our 62 submissions (32\%) failed with ``ERROR'' status due to overlapping instances, wasting submission quota. Explicit overlap resolution is mandatory.
+\end{enumerate}
+
+\section{Results}
+
+\subsection{Out-of-Fold Performance}
+
+Our final EfficientNet-B3 50-epoch 5-fold model achieved:
+\begin{itemize}
+    \item \textbf{OOF PQ}: 0.4204 (range: 0.4084--0.4275 across folds)
+    \item \textbf{Segmentation Quality (SQ)}: 0.6799
+    \item \textbf{Recognition Quality (RQ)}: 0.6183
+    \item \textbf{TP/FP/FN}: 5292 / 3814 / 2523 (per-fold: TP$\approx$1060, FP$\approx$800, FN$\approx$500)
+\end{itemize}
+
+This represents a $+10.3\%$ improvement over our 30-epoch baseline (OOF PQ 0.381).
+
+\subsection{Public Leaderboard}
+
+Our best submission achieved:
+\begin{itemize}
+    \item \textbf{Public Score}: 0.38 PQ
+    \item \textbf{Rank}: 468 / 1566 (top 29.9\%)
+    \item \textbf{OOF→Public gap}: $-0.040$ (consistent with reference solution~\cite{argoha2026}: $-0.049$)
+\end{itemize}
+
+113 teams tied at 0.38, and 529 teams scored $\geq 0.38$. An additional 0.01 PQ would have reached top 300, and 0.02 would have reached top 200. The density at 0.38 suggests this is a natural barrier for honest, semantic-segmentation-based approaches without native 2048² resolution.
+
+\subsection{Comparison to Reference Solution}
+
+The ArgoHA reference solution~\cite{argoha2026} (public GitHub repository) achieved identical public score (0.38) with validation PQ 0.429, using:
+\begin{itemize}
+    \item Native 2048² resolution prediction
+    \item D-FINE instance segmentation architecture
+    \item Component confidence truncation
+\end{itemize}
+
+Their findings corroborate ours:
+\begin{itemize}
+    \item Resolution is critical ($+0.057$ PQ from 1280→2048)
+    \item Component quality filtering is essential ($+0.010$ PQ)
+    \item TTA has marginal benefit ($+0.005$ PQ for 8× cost)
+    \item Model size (S vs M) has negligible impact
+\end{itemize}
+
+The convergence of two independent solutions to 0.38 with similar validation gaps ($\sim 0.04$--$0.05$) suggests this represents the practical ceiling for current methodologies on this dataset without leaked annotations.
+
+\section{Discussion and Lessons Learned}
+
+\subsection{Metric Family Matters}
+
+Our most costly mistake was optimizing for semantic Dice while the official scorer used instance PQ. These metrics can produce \textit{inverse rankings}: a model with higher Dice can have lower PQ. We spent 10 weeks (August--October) before fully migrating to a strict instance PQ contract for model selection. \textbf{Lesson}: Reproduce the official scorer on day 1.
+
+\subsection{Submission Format Validation}
+
+20 of our 62 submissions failed due to overlapping instance predictions, which we never tested locally. Our RLE format validator passed, but the PQ scorer silently rejected overlaps. \textbf{Lesson}: Enforce all scorer constraints in pre-submission validation, not just format.
+
+\subsection{Resolution vs. Capacity}
+
+We explored architectural variants (EfficientNet-B3 vs B4, U-Net vs U-Net++, Mask R-CNN) but stayed at 768px training resolution. Reference solutions show that resolution dominates architecture. \textbf{Lesson}: Prioritize input resolution over model capacity for dense fine-grained tasks.
+
+\subsection{Honest Baselines in Leaked Competitions}
+
+With 77\% of test data publicly available, scores $> 0.41$ are suspect. The organizers' stated threshold (PQ $> 0.35$ has merit) and manual review process suggest that methodology and reproducibility matter more than leaderboard rank in such contexts. Our approach prioritizes reproducibility and scientific rigor over leaderboard gaming.
+
+\section{Conclusion}
+
+We demonstrated that semantic segmentation with quality-gated post-processing can achieve competitive instance segmentation performance (PQ 0.38, top 30\%) on solar filament data without architectural complexity or leaked annotations. Key findings include: (1) input representation matters---three-channel geometric features outperform raw intensity; (2) resolution is the primary bottleneck, worth $+0.05$ PQ; (3) quality-based component filtering is essential for PQ optimization; (4) proxy metrics must match official scorer families to avoid inverse rankings.
+
+Future work should prioritize native 2048² resolution training and explore learned quality estimators beyond percentile thresholding.
+
+\section*{Code and Reproducibility}
+
+All code, training scripts, and experiment artifacts are available at:
+\begin{center}
+\url{https://github.com/UR-xiaoyang/solar-filament-segmentation-2026}
+\end{center}
+
+Model weights (5 folds, 265 MB total) are hosted on Hugging Face Hub. Full reproduction requires 1× RTX 4090 GPU and approximately 72 hours for 5-fold training.
+
+\begin{thebibliography}{9}
+
+\bibitem{kirillov2019panoptic}
+A. Kirillov, K. He, R. Girshick, C. Rother, and P. Dollár,
+``Panoptic segmentation,''
+in \textit{CVPR}, 2019.
+
+\bibitem{magfilo}
+MAGFiLO Team,
+``Machine-Annotated GLobal Filaments and Oscillations (MAGFiLO) Dataset,''
+\url{https://github.com/bmampaey/MAGFiLO}, 2023.
+
+\bibitem{discussion741892}
+Kaggle Discussion \#741892,
+``Analysis of Score Distribution and Data Leakage,''
+2026.
+
+\bibitem{discussion724503}
+Kaggle Discussion \#724503 (Host Response),
+``Organizer Statement on Evaluation Criteria,''
+2026.
+
+\bibitem{argoha2026}
+ArgoHA Team,
+``Solar Filament D-FINE Segmentation Reference Solution,''
+\url{https://github.com/ArgoHA/solar-filament-dfine-seg}, 2026.
+
+\bibitem{tan2019efficientnet}
+M. Tan and Q. Le,
+``EfficientNet: Rethinking model scaling for convolutional neural networks,''
+in \textit{ICML}, 2019.
+
+\bibitem{roy2018concurrent}
+A. G. Roy, N. Navab, and C. Wachinger,
+``Concurrent spatial and channel 'squeeze \& excitation' in fully convolutional networks,''
+in \textit{MICCAI}, 2018.
+
+\bibitem{iakubovskii2019segmentation}
+P. Iakubovskii,
+``Segmentation Models Pytorch,''
+\url{https://github.com/qubvel/segmentation_models.pytorch}, 2019.
+
+\bibitem{salehi2017tversky}
+S. S. M. Salehi, D. Erdogmus, and A. Gholipour,
+``Tversky loss function for image segmentation using 3D fully convolutional deep networks,''
+in \textit{MLMI}, 2017.
+
+\bibitem{smith2019super}
+L. N. Smith and N. Topin,
+``Super-convergence: Very fast training of neural networks using large learning rates,''
+in \textit{Artificial Intelligence and Machine Learning for Multi-Domain Operations Applications}, 2019.
+
+\end{thebibliography}
+
+\end{document}

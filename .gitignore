@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+.venv-m0/
+.bootstrap/
+data/
+*.zip
+artifacts/m8/oof_inputs_remote/
+
+# Large binary artifacts
+artifacts/**/*.pt
+artifacts/**/*.pth
+artifacts/**/*.npy
+artifacts/**/*.npz
+artifacts/**/checkpoint*.pt

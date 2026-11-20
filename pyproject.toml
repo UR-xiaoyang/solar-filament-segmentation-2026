@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "filament-contract"
+version = "0.1.0"
+description = "Submission format contract for the Solar Filament Segmentation Challenge 2026"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.26,<2",
+    "Pillow>=10",
+    "pycocotools>=2.0.7",
+]
+
+[project.scripts]
+filament-audit-data = "filament_contract.dataset:main"
+filament-m2 = "filament_contract.m2_pipeline:main"
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8,<9",
+]
+train = [
+    "segmentation-models-pytorch==0.5.0",
+    "torch>=2.7,<2.8",
+    "torchvision>=0.22,<0.23",
+]
+morphology = [
+    "scipy>=1.11,<2",
+    "scikit-image>=0.22,<1",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]

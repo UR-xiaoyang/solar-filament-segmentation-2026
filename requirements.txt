@@ -1,0 +1,35 @@
+# Solar Filament Segmentation Challenge 2026
+# Python 3.10+ required
+# Install: pip install -r requirements.txt
+
+# Core dependencies
+numpy>=1.26,<2
+scipy>=1.11,<2
+pandas>=2.0,<3
+Pillow>=10
+
+# PyTorch and vision
+torch>=2.7,<2.8
+torchvision>=0.22,<0.23
+
+# Segmentation models
+segmentation-models-pytorch==0.5.0
+timm>=0.9,<1.0
+
+# Image processing
+scikit-image>=0.22,<1
+opencv-python-headless>=4.8,<5
+pycocotools>=2.0.7
+
+# Model weights (optional for inference only)
+# huggingface_hub>=0.20
+# safetensors>=0.4
+
+# Jupyter notebook (optional for running notebooks)
+# ipykernel>=6.0
+# jupyter_client>=8.0
+# nbconvert>=7.0
+# nbformat>=5.0
+
+# Testing (optional)
+# pytest>=8,<9
